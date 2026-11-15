@@ -25,32 +25,40 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      - name: Generate Release Keystore
+        run: |
+          keytool -genkeypair -v -keystore app/release.keystore \
+            -alias release -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass tgautoresponder -keypass tgautoresponder \
+            -dname "CN=TGAutoResponder, OU=Mobile, O=AutoTronix, L=City, ST=State, C=US"
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew || true
 
-      - name: Build Debug APK
-        run: gradle assembleDebug
+      - name: Build Release APK
+        run: gradle assembleRelease
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TG-AutoResponder-Android-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: TG-AutoResponder-Android-Release-APK
+          path: app/build/outputs/apk/release/app-release.apk
 
-      - name: Create GitHub Release
+      - name: Update GitHub Release
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
           name: TG AutoResponder v1.0.0 (APK & EXE)
           body: |
-            ## 🚀 TG AutoResponder v1.0.0
+            ## 🚀 TG AutoResponder v1.0.0 (Официальный Release)
             
-            В этом релизе доступны обе версии:
-            - 📱 **Android**: `app-debug.apk` (автоответчик на входящие сообщения Telegram через уведомления)
+            В этом релизе:
+            - 📱 **Android**: `app-release.apk` (подписанный релизный APK с официальным сертификатом)
             - 💻 **Windows**: `TGAutoResponder-Windows-Standalone.zip` (автоответчик для ПК с поддержкой текста и **любых стикеров**)
+            - 💻 **Windows Lite**: `TGAutoResponderDesktop.exe`
           files: |
-            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk
             dist-windows/TGAutoResponder-Windows-Standalone.zip
             dist-windows-lite/TGAutoResponderDesktop.exe
         env:
