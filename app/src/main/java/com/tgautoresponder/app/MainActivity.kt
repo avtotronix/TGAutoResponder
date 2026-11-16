@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var prefs: PreferencesManager
     private val contactsUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            // Handled via state trigger
+            // Live broadcast
         }
     }
 
@@ -82,8 +82,9 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(prefs: PreferencesManager) {
     val context = LocalContext.current
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Главная, 1: Чаты, 2: История
+    var selectedTab by remember { mutableIntStateOf(0) }
     var isEnabled by remember { mutableStateOf(prefs.isEnabled) }
+    var onlyWhenOffline by remember { mutableStateOf(prefs.onlyWhenOffline) }
     var replyText by remember { mutableStateOf(prefs.replyText) }
     var cooldownMinutes by remember { mutableIntStateOf(prefs.cooldownMinutes) }
     var hasPermission by remember { mutableStateOf(checkNotificationAccess(context)) }
@@ -94,13 +95,13 @@ fun MainScreen(prefs: PreferencesManager) {
     var showAddDialog by remember { mutableStateOf(false) }
 
     val templates = listOf(
-        "Привет! Я сейчас занят, отвечу позже 👋",
+        "Привет! Я сейчас не в сети, отвечу позже 👋",
         "За рулем 🚗 Напишу как освобожусь!",
-        "На совещании 🤫 Отвечу позже.",
-        "Уже сплю 😴 Завтра свяжемся!"
+        "На совещании 🤫 Скоро свяжемся.",
+        "Уже сплю 😴 Завтра отвечу!"
     )
 
-    val cooldownOptions = listOf(1, 5, 10, 30, 60)
+    val cooldownOptions = listOf(0, 1, 5, 15, 60)
 
     Scaffold(
         containerColor = BgBlack,
@@ -124,7 +125,7 @@ fun MainScreen(prefs: PreferencesManager) {
                                 fontSize = 19.sp
                             )
                             Text(
-                                text = "v1.0.1 Pink Edition",
+                                text = "v1.0.2 Smart Offline Mode",
                                 color = NeonPink,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -233,6 +234,17 @@ fun MainScreen(prefs: PreferencesManager) {
                             )
                         }
 
+                        // Offline smart mode card
+                        item {
+                            OfflineModeCard(
+                                onlyWhenOffline = onlyWhenOffline,
+                                onToggle = { newValue ->
+                                    onlyWhenOffline = newValue
+                                    prefs.onlyWhenOffline = newValue
+                                }
+                            )
+                        }
+
                         // Global reply text editor
                         item {
                             Card(
@@ -252,16 +264,16 @@ fun MainScreen(prefs: PreferencesManager) {
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = "Общий текст автоответа",
+                                            text = "Текст ответа",
                                             fontWeight = FontWeight.Bold,
                                             color = TextWhite,
                                             fontSize = 16.sp
                                         )
                                     }
 
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "Отправляется всем людям, для которых не настроено индивидуальное сообщение.",
+                                        text = "Уходит моментально в ту же минуту (21:01 → 21:01), когда вы не в сети.",
                                         fontSize = 12.sp,
                                         color = TextPinkMuted
                                     )
@@ -324,7 +336,7 @@ fun MainScreen(prefs: PreferencesManager) {
                             }
                         }
 
-                        // Cooldown card
+                        // Cooldown / speed card
                         item {
                             Card(
                                 shape = RoundedCornerShape(16.dp),
@@ -336,14 +348,14 @@ fun MainScreen(prefs: PreferencesManager) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
-                                            imageVector = Icons.Default.Timer,
+                                            imageVector = Icons.Default.Bolt,
                                             contentDescription = null,
                                             tint = NeonPink,
                                             modifier = Modifier.size(20.dp)
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = "Интервал повтора (Кулдаун)",
+                                            text = "Скорость и интервал ответов",
                                             fontWeight = FontWeight.Bold,
                                             color = TextWhite,
                                             fontSize = 16.sp
@@ -352,9 +364,9 @@ fun MainScreen(prefs: PreferencesManager) {
 
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "Не спамить: отвечать одному человеку не чаще раза в:",
+                                        text = if (cooldownMinutes == 0) "⚡ Мгновенный ответ на каждое входящее сообщение (21:01 → 21:01)" else "Отвечать одному человеку не чаще, чем раз в $cooldownMinutes мин.",
                                         fontSize = 12.sp,
-                                        color = TextPinkMuted
+                                        color = if (cooldownMinutes == 0) NeonPink else TextPinkMuted
                                     )
 
                                     Spacer(modifier = Modifier.height(12.dp))
@@ -365,23 +377,24 @@ fun MainScreen(prefs: PreferencesManager) {
                                     ) {
                                         cooldownOptions.forEach { minutes ->
                                             val selected = cooldownMinutes == minutes
+                                            val label = if (minutes == 0) "Сразу ⚡" else "${minutes}м"
                                             Box(
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .background(if (selected) NeonPink else SurfaceBlack)
                                                     .border(1.dp, if (selected) HotPink else BorderPink, RoundedCornerShape(10.dp))
-                                                    .clickable {
-                                                        cooldownMinutes = minutes
-                                                        prefs.cooldownMinutes = minutes
-                                                    }
-                                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                                .clickable {
+                                                    cooldownMinutes = minutes
+                                                    prefs.cooldownMinutes = minutes
+                                                }
+                                                .padding(horizontal = 10.dp, vertical = 10.dp),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
-                                                    text = "${minutes}м",
+                                                    text = label,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (selected) Color.White else TextPinkMuted,
-                                                    fontSize = 14.sp
+                                                    fontSize = 13.sp
                                                 )
                                             }
                                         }
@@ -393,7 +406,7 @@ fun MainScreen(prefs: PreferencesManager) {
                 }
 
                 1 -> {
-                    // TAB 2: ЧАТЫ И ЛЮДИ (Персональная настройка)
+                    // TAB 2: ЧАТЫ И ЛЮДИ
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -422,7 +435,7 @@ fun MainScreen(prefs: PreferencesManager) {
                                                 fontSize = 17.sp
                                             )
                                             Text(
-                                                text = "Каналы и группы автоматически исключены.",
+                                                text = "Каналы и группы исключены",
                                                 color = NeonPink,
                                                 fontSize = 12.sp
                                             )
@@ -442,7 +455,7 @@ fun MainScreen(prefs: PreferencesManager) {
 
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "Чаты появляются автоматически, когда люди пишут вам. Вы можете настроить особое сообщение для любого контакта или полностью выключить автоответ для него.",
+                                        text = "Вы можете настроить персональное сообщение для отдельного человека или отключить автоответ для него.",
                                         fontSize = 12.sp,
                                         color = TextPinkMuted,
                                         lineHeight = 16.sp
@@ -482,7 +495,7 @@ fun MainScreen(prefs: PreferencesManager) {
                                         )
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Text(
-                                            text = "Как только вам напишет первый человек в Telegram, он появится здесь. Либо добавьте контакт вручную кнопкой «+ Контакт».",
+                                            text = "Когда вам напишет человек в Telegram (пока вы не в сети), он автоматически появится здесь.",
                                             color = TextPinkMuted,
                                             fontSize = 13.sp,
                                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -600,6 +613,91 @@ fun MainScreen(prefs: PreferencesManager) {
 }
 
 @Composable
+fun OfflineModeCard(onlyWhenOffline: Boolean, onToggle: (Boolean) -> Unit) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (onlyWhenOffline) Color(0xFF221122) else CardBlack
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                if (onlyWhenOffline) NeonPink else BorderPink,
+                RoundedCornerShape(16.dp)
+            )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        imageVector = Icons.Default.Bedtime,
+                        contentDescription = null,
+                        tint = NeonPink,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Только когда не в сети",
+                            fontWeight = FontWeight.Bold,
+                            color = TextWhite,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            text = if (onlyWhenOffline) "🌙 Умный режим активен" else "⚪ Отвечать всегда",
+                            color = if (onlyWhenOffline) NeonPink else TextDarkMuted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                Switch(
+                    checked = onlyWhenOffline,
+                    onCheckedChange = onToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = TextWhite,
+                        checkedTrackColor = NeonPink,
+                        uncheckedThumbColor = TextDarkMuted,
+                        uncheckedTrackColor = SurfaceBlack
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Surface(
+                color = SurfaceBlack,
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderPink),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "📱 Как это работает:",
+                        fontWeight = FontWeight.Bold,
+                        color = TextWhite,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "• Когда экран выключен или заблокирован (вы не в сети) — автоответчик отвечает СРАЗУ в ту же минуту.\n• Когда вы разблокируете экран и пользуетесь телефоном (вы в сети) — автоответчик отключается сам.\n• Как только блокируете телефон обратно — автоответчик снова моментально включается!",
+                        color = TextPinkMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ContactItemCard(
     contact: ContactConfig,
     onToggle: (Boolean) -> Unit,
@@ -625,7 +723,6 @@ fun ContactItemCard(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar with initial letter
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -679,7 +776,6 @@ fun ContactItemCard(
                 }
             }
 
-            // Quick Toggle
             Switch(
                 checked = contact.isEnabled,
                 onCheckedChange = onToggle,
@@ -888,7 +984,7 @@ fun StatusToggleCard(isEnabled: Boolean, onToggle: (Boolean) -> Unit) {
                     fontSize = 17.sp
                 )
                 Text(
-                    text = if (isEnabled) "🟢 Отвечает на входящие личные чаты" else "⚪ Ответы приостановлены",
+                    text = if (isEnabled) "🟢 Служба активна" else "⚪ Ответы приостановлены",
                     color = if (isEnabled) NeonPink else TextDarkMuted,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium

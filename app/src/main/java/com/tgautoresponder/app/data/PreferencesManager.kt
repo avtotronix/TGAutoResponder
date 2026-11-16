@@ -13,12 +13,16 @@ class PreferencesManager(context: Context) {
         get() = prefs.getBoolean(KEY_IS_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_IS_ENABLED, value).apply()
 
+    var onlyWhenOffline: Boolean
+        get() = prefs.getBoolean(KEY_ONLY_WHEN_OFFLINE, true)
+        set(value) = prefs.edit().putBoolean(KEY_ONLY_WHEN_OFFLINE, value).apply()
+
     var replyText: String
-        get() = prefs.getString(KEY_REPLY_TEXT, "Привет! Я сейчас занят, отвечу позже 👋") ?: ""
+        get() = prefs.getString(KEY_REPLY_TEXT, "Привет! Я сейчас не в сети, отвечу позже 👋") ?: ""
         set(value) = prefs.edit().putString(KEY_REPLY_TEXT, value).apply()
 
     var cooldownMinutes: Int
-        get() = prefs.getInt(KEY_COOLDOWN, 10)
+        get() = prefs.getInt(KEY_COOLDOWN, 0)
         set(value) = prefs.edit().putInt(KEY_COOLDOWN, value).apply()
 
     fun addLog(entry: String) {
@@ -108,7 +112,6 @@ class PreferencesManager(context: Context) {
             persistContacts(contacts)
             true
         } else {
-            // Update lastMessageTime
             val existing = contacts[existingIndex]
             contacts[existingIndex] = existing.copy(lastMessageTime = System.currentTimeMillis())
             persistContacts(contacts)
@@ -149,6 +152,7 @@ class PreferencesManager(context: Context) {
 
     companion object {
         private const val KEY_IS_ENABLED = "is_enabled"
+        private const val KEY_ONLY_WHEN_OFFLINE = "only_when_offline"
         private const val KEY_REPLY_TEXT = "reply_text"
         private const val KEY_COOLDOWN = "cooldown_minutes"
         private const val KEY_CONTACTS_JSON = "contacts_list_json"

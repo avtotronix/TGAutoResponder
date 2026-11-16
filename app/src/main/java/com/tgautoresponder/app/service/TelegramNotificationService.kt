@@ -1,10 +1,13 @@
 package com.tgautoresponder.app.service
 
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.RemoteInput
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.PowerManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -78,6 +81,23 @@ class TelegramNotificationService : NotificationListenerService() {
 
         if (!prefs.isEnabled) return
 
+        // --- CHECK IF USER IS ONLINE OR OFFLINE ---
+        if (prefs.onlyWhenOffline) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+
+            val isScreenInteractive = powerManager?.isInteractive == true
+            val isDeviceLocked = keyguardManager?.isKeyguardLocked == true
+
+            // User is considered online if screen is ON and device is NOT locked
+            val isUserOnline = isScreenInteractive && !isDeviceLocked
+
+            if (isUserOnline) {
+                Log.d(TAG, "User is currently ONLINE (screen is on & unlocked). Auto-reply is paused.")
+                return
+            }
+        }
+
         // Check if auto-reply is enabled for this specific contact
         val replyMessage = prefs.getReplyMessageFor(senderName)
         if (replyMessage == null) {
@@ -86,13 +106,20 @@ class TelegramNotificationService : NotificationListenerService() {
         }
 
         // Check cooldown
-        val cooldownMs = prefs.cooldownMinutes * 60 * 1000L
         val now = System.currentTimeMillis()
         val lastReplied = lastReplyTimeMap[senderName] ?: 0L
 
-        if (now - lastReplied < cooldownMs) {
-            Log.d(TAG, "Skipping $senderName due to cooldown. Last replied: $lastReplied")
-            return
+        if (prefs.cooldownMinutes > 0) {
+            val cooldownMs = prefs.cooldownMinutes * 60 * 1000L
+            if (now - lastReplied < cooldownMs) {
+                Log.d(TAG, "Skipping $senderName due to cooldown. Last replied: $lastReplied")
+                return
+            }
+        } else {
+            // Instant reply mode: 5-second anti-duplicate guard for identical broadcasts
+            if (now - lastReplied < 5000L) {
+                return
+            }
         }
 
         // Search for Reply action with RemoteInput
@@ -102,14 +129,17 @@ class TelegramNotificationService : NotificationListenerService() {
         }
 
         try {
+            // Send reply immediately
             sendAutoReply(action.actionIntent, remoteInput, replyMessage)
             lastReplyTimeMap[senderName] = now
 
             val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
             val isCustom = prefs.getContacts().find { it.name.equals(senderName, ignoreCase = true) }?.customMessage?.isNotBlank() == true
-            val tag = if (isCustom) " (персонально)" else ""
-            prefs.addLog("✅ $senderName$tag в ${timeFormat.format(Date())}: $replyMessage")
-            Log.d(TAG, "Successfully replied to $senderName")
+            val customTag = if (isCustom) " (персонально)" else ""
+            val offlineTag = if (prefs.onlyWhenOffline) " 🌙" else ""
+
+            prefs.addLog("⚡ $senderName$customTag$offlineTag в ${timeFormat.format(Date())}: $replyMessage")
+            Log.d(TAG, "Successfully replied instantly to $senderName")
         } catch (e: Exception) {
             Log.e(TAG, "Error sending auto-reply", e)
         }
@@ -119,7 +149,7 @@ class TelegramNotificationService : NotificationListenerService() {
         val notification = sbn.notification ?: return null
         val extras = notification.extras ?: return null
 
-        // Filter out groups: Android flags group conversations in extras
+        // Filter out groups
         if (extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)) {
             return null
         }
@@ -134,14 +164,13 @@ class TelegramNotificationService : NotificationListenerService() {
             return null
         }
 
-        // Check if this notification has a reply action (channels do NOT have reply actions!)
+        // Channels do NOT have reply actions
         if (findReplyAction(notification) == null) {
             return null
         }
 
-        // Filter group-like title structures (e.g. "Group Name (3 messages)" or "Group: User")
+        // Filter group-like title structures
         if (title.contains(":") && title.indexOf(":") < 15) {
-            // Group notifications often prepend group title
             return null
         }
 
